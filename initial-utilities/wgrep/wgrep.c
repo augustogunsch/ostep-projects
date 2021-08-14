@@ -1,29 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <stddef.h>
-
-bool matches(char* pattern, char* string) {
-	char c;
-	int i = 0;
-	int pi = 0;
-	while(c = string[i], c != '\0') {
-		if(pattern[pi] == '\0')
-			return true;
-		else if(pattern[pi] == c)
-			pi++;
-		else
-			pi = 0;
-		i++;
-	}
-	return false;
-}
+#include <string.h>
 
 void filterStream(char* pattern, FILE* stream) {
 	char* lineptr = NULL;
 	size_t size;
 	while(getline(&lineptr, &size, stream) != -1)
-		if(matches(pattern, lineptr))
+		if(strstr(lineptr, pattern) != NULL)
 			printf("%s", lineptr);
 	free(lineptr);
 }
