@@ -88,13 +88,13 @@ exec(struct cmd* c)
 	int code = fork();
 	if(code == 0) {
 		if(c->ostream != NULL) {
+			fclose(stderr);
+			fclose(stdout);
 			FILE* out = fopen(c->ostream, "w");
 			if(out == NULL) {
 				eprintf("%s: %s\n", progname, strerror(errno));
 				return;
 			}
-			fclose(stdout);
-			fclose(stderr);
 		}
 		execv(c->bin, c->argv);
 	}
