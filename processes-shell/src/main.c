@@ -11,10 +11,15 @@
 
 char* progname;
 int path_size = 2;
+int path_count = 2;
 char** path;
 
 void
 builtin_exit(int argc, char* argv[]) {
+	if(argc != 0) {
+		eprintf("usage: exit\n");
+		return;
+	}
 	exit(0);
 }
 
@@ -31,9 +36,25 @@ builtin_cd(int argc, char* argv[]) {
 		eprintf("%s\n", strerror(errno));
 }
 
+void
+builtin_path(int argc, char* argv[]) {
+	for(int i = 1; i <= argc; i++) {
+		if(i == path_size) {
+			path_size *= 2;
+			path = realloc(path, path_size*sizeof(char*));
+		}
+		if(i <= path_count) free(path[i-1]);
+		char* str = (char*)malloc(sizeof(char)*(strlen(argv[i])+1));
+		strcpy(str, argv[i]);
+		path[i-1] = str;
+	}
+	path_count = argc;
+}
+
 void* builtins[] = {
 	"exit", &builtin_exit,
-	"cd", &builtin_cd
+	"cd", &builtin_cd,
+	"path", &builtin_path
 };
 
 char*

@@ -9,6 +9,7 @@
 
 extern char* progname;
 extern int path_size;
+extern int path_count;
 extern char** path;
 
 char**
@@ -46,7 +47,7 @@ get_bin(char* name)
 		}
 	}
 	else {
-		for(int i = 0; i < path_size; i++) {
+		for(int i = 0; i < path_count; i++) {
 			char* tmp = (char*)malloc((strlen(path[i])+strlen(name)+2)*sizeof(char));
 			sprintf(tmp, "%s/%s", path[i], name);
 			if(access(tmp, X_OK) == 0) {
