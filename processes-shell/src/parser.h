@@ -15,7 +15,6 @@ struct cmdv {
 	int cmdc;
 	struct cmd** cmds;
 	int cmds_sz;
-	char* orig_ln;
 };
 
 struct cmdv* parse_ln(char* ln);

@@ -4,35 +4,94 @@
 #include <unistd.h>
 #include <stdbool.h>
 #include <errno.h>
+#include <ctype.h>
 #include "parser.h"
 #include "macros.h"
 
-extern char* progname;
 extern int path_size;
 extern int path_count;
 extern char** path;
 
-char**
-split_tokens(char* input, int* count)
+struct strv {
+	char** strs;
+	int strc;
+	int strs_sz;
+};
+
+struct strv*
+mkstrv()
 {
-	char** vector = (char**)malloc(DEFAULT_VECTOR_SIZE*sizeof(char*));
-	int vector_size = DEFAULT_VECTOR_SIZE;
-	int n = 1;
-	vector[0] = strtok(input, " ");
+	struct strv* v = (struct strv*)malloc(sizeof(struct strv));
+	v->strc = 0;
+	v->strs_sz = DEFAULT_VECTOR_SIZE;
+	v->strs = (char**)malloc(v->strs_sz*sizeof(char*));
+	return v;
+}
 
-	if(vector[0] != NULL)
-		while(1) {
-			if(n == vector_size) {
-				vector_size *= 2;
-				vector = (char**)realloc(vector, vector_size*sizeof(char*));
+void
+pushstr(struct strv* v, char* str)
+{
+	if(v->strc == v->strs_sz) {
+		v->strs_sz *= 2;
+		v->strs = realloc(v->strs, v->strs_sz);
+	}
+	v->strs[v->strc] = str;
+	v->strc++;
+}
+
+void
+freestrv(struct strv* v)
+{
+	free(v->strs);
+	free(v);
+}
+
+char*
+read_token(char* str, int start, int end)
+{
+	char* start_str = str + sizeof(char)*start;
+	int ostrs_sz = end-start+1;
+	char* ostr = (char*)malloc(ostrs_sz*sizeof(char));
+	snprintf(ostr, ostrs_sz, "%s", start_str);
+	return ostr;
+}
+
+struct strv*
+split_tokens(char* input)
+{
+	struct strv* v = mkstrv();
+	int char_c = 0;
+	int start_i = 0;
+	bool isspecial = false;
+
+	int i = 0;
+	while(input[i] != '\0') {
+		isspecial = input[i] == '&' || input[i] == '>';
+		if(isspace(input[i]) || isspecial) {
+			if(char_c > 0) {
+				pushstr(v, read_token(input, start_i, i));
+				char_c = 0;
 			}
-			vector[n] = strtok(NULL, " ");
-			if(vector[n] == NULL) break;
-			n++;
+			if (isspecial) {
+				start_i = i;
+				i++;
+				pushstr(v, read_token(input, start_i, i));
+				start_i++;
+			}
+			else {
+				i++;
+				start_i = i;
+			}
+			continue;
 		}
+		i++;
+		char_c++;
+	}
+	if(char_c > 0)
+		pushstr(v, read_token(input, start_i, i));
 
-	*count = n - 1;
-	return vector;
+	free(input);
+	return v;
 }
 
 char*
@@ -40,22 +99,18 @@ get_bin(char* name)
 {
 	char* result = NULL;
 
-	if(name[0] == '.' && name[1] == '/') {
-		if(access(name, X_OK) == 0) {
-			result = (char*)malloc((strlen(name)+1)*sizeof(char));
-			strcpy(result, name);
+	for(int i = 0; i < path_count; i++) {
+		char* tmp = (char*)malloc((strlen(path[i])+strlen(name)+2)*sizeof(char));
+		sprintf(tmp, "%s/%s", path[i], name);
+		if(access(tmp, X_OK) == 0) {
+			result = tmp;
+			break;
 		}
+		free(tmp);
 	}
-	else {
-		for(int i = 0; i < path_count; i++) {
-			char* tmp = (char*)malloc((strlen(path[i])+strlen(name)+2)*sizeof(char));
-			sprintf(tmp, "%s/%s", path[i], name);
-			if(access(tmp, X_OK) == 0) {
-				result = tmp;
-				break;
-			}
-			free(tmp);
-		}
+	if(result == NULL && access(name, X_OK) == 0) {
+		result = (char*)malloc((strlen(name)+1)*sizeof(char));
+		strcpy(result, name);
 	}
 
 	return result;
@@ -81,7 +136,7 @@ pushcmd(struct cmdv* v, struct cmd* c)
 	}
 	v->cmds[v->cmdc] = c;
 	v->cmdc++;
-	c->bin = get_bin(c->argv[0]);
+	if(c->argc > 0) c->bin = get_bin(c->argv[0]);
 	c->argv[c->argc] = NULL;
 }
 
@@ -94,6 +149,7 @@ mk_cmd()
 	c->argv = (char**)malloc(c->argv_sz*sizeof(char*));
 	c->parallel = false;
 	c->ostream = NULL;
+	c->bin = NULL;
 	return c;
 }
 
@@ -108,32 +164,28 @@ mk_cmdv()
 }
 
 struct cmdv*
-split_commands(int argc, char** argv)
+split_commands(struct strv* args)
 {
 	struct cmdv* v = mk_cmdv();
 	struct cmd* curcmd = mk_cmd();
 
-	for(int i = 0; i <= argc; i++) {
-		if(strcmp(argv[i], "&") == 0) {
-			if(curcmd->argc == 0) {
-				eprintf("%s: parse error near '&'\n", progname);
-				return NULL;
-			}
+	for(int i = 0; i < args->strc; i++) {
+		if(strcmp(args->strs[i], "&") == 0) {
 			curcmd->parallel = true;
 			pushcmd(v, curcmd);
 			curcmd = mk_cmd();
 			continue;
 		}
-		if(strcmp(argv[i], ">") == 0) {
+		if(strcmp(args->strs[i], ">") == 0) {
 			i++;
-			if(i > argc || curcmd->argc == 0) {
-				eprintf("%s: parse error near '>'\n", progname);
+			if((i >= args->strc || curcmd->argc == 0) || (i + 1 < args->strc && strcmp(args->strs[i + 1], "&") != 0)) {
+				panic();
 				return NULL;
 			}
-			curcmd->ostream = argv[i];
+			curcmd->ostream = args->strs[i];
 			continue;
 		}
-		pusharg(curcmd, argv[i]);
+		pusharg(curcmd, args->strs[i]);
 	}
 	if(curcmd->argc > 0)
 		pushcmd(v, curcmd);
@@ -142,23 +194,22 @@ split_commands(int argc, char** argv)
 		free(curcmd);
 	}
 
-	free(argv);
+	freestrv(args);
 	return v;
 }
 
 struct cmdv*
 parse_ln(char* ln)
 {
-	int argc;
-	struct cmdv* v = split_commands(argc, split_tokens(ln, &argc));
-	if(v != NULL) v->orig_ln = ln;
-	return v;
+	return split_commands(split_tokens(ln));
 }
 
 void free_cmd(struct cmd* c)
 {
+	for(int i = 0; i < c->argc; i++)
+		free(c->argv[i]);
 	free(c->argv);
-	free(c->bin);
+	if(c->bin != NULL) free(c->bin);
 	free(c);
 }
 
@@ -166,7 +217,6 @@ void free_cmdv(struct cmdv* v)
 {
 	for(int i = 0; i < v->cmdc; i++)
 		free_cmd(v->cmds[i]);
-	free(v->orig_ln);
 	free(v->cmds);
 	free(v);
 }
