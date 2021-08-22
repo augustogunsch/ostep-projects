@@ -4,6 +4,7 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <stdbool.h>
 #include "parser.h"
 #include "macros.h"
 
@@ -16,7 +17,7 @@ char** path;
 
 void
 builtin_exit(int argc, char* argv[]) {
-	if(argc != 0) {
+	if(argc != 1) {
 		eprintf("usage: exit\n");
 		return;
 	}
@@ -25,7 +26,7 @@ builtin_exit(int argc, char* argv[]) {
 
 void
 builtin_cd(int argc, char* argv[]) {
-	if(argc != 1) {
+	if(argc != 2) {
 		eprintf("usage: cd <dir>\n");
 		return;
 	}
@@ -38,7 +39,7 @@ builtin_cd(int argc, char* argv[]) {
 
 void
 builtin_path(int argc, char* argv[]) {
-	for(int i = 1; i <= argc; i++) {
+	for(int i = 1; i < argc; i++) {
 		if(i == path_size) {
 			path_size *= 2;
 			path = realloc(path, path_size*sizeof(char*));
@@ -58,17 +59,24 @@ void* builtins[] = {
 };
 
 char*
-prompt_user()
+get_line(FILE* input, bool interactive)
 {
-	printf(PROMPT);
+	if(interactive) {
+	       	printf(PROMPT);
+	}
 	char* line = NULL;
 	size_t size = 0;
 	int chars = 0;
-	chars = getline(&line, &size, stdin);
+	chars = getline(&line, &size, input);
 	line[chars-1] = '\0';
+
+	if(!interactive && feof(input)) {
+		exit(0);
+	}
 
 	return line;
 }
+
 void
 exec(struct cmd* c)
 {
@@ -105,6 +113,27 @@ exec(struct cmd* c)
 int
 main(int argc, char* argv[])
 {
+	if (argc > 2) {
+		eprintf("%s: %s (file)\n", argv[0], argv[0]);
+		exit(1);
+	}
+
+	FILE* input;
+	bool interactive;
+
+	if (argc == 2) {
+		input = fopen(argv[1], "r");
+		if(input == NULL) {
+			eprintf("%s: %s\n", argv[0], strerror(errno));
+			exit(1);
+		}
+		interactive = false;
+	}
+	else {
+		input = stdin;
+		interactive = true;
+	}
+
 	progname = (char*)malloc(strlen(argv[0]) + 1*sizeof(char));
 	strcpy(progname, argv[0]);
 
@@ -113,7 +142,7 @@ main(int argc, char* argv[])
 	path[1] = strdup("/bin");
 
 	while(1) {
-		struct cmdv* v = parse_ln(prompt_user());
+		struct cmdv* v = parse_ln(get_line(input, interactive));
 
 		if(v != NULL)
 			for(int i = 0; i < v->cmdc; i++)

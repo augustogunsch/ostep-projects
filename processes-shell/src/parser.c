@@ -83,7 +83,6 @@ pushcmd(struct cmdv* v, struct cmd* c)
 	v->cmdc++;
 	c->bin = get_bin(c->argv[0]);
 	c->argv[c->argc] = NULL;
-	c->argc--;
 }
 
 struct cmd*
